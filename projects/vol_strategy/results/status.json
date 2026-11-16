@@ -1,0 +1,89 @@
+{
+  "data_end": "2026-11-13",
+  "spx": 7561.67,
+  "vix": 19.3,
+  "vix_in_entry_band": false,
+  "note": "Under the primary rules a new position is opened only when flat and the previous close's VIX is in the band. 'open_positions' are positions the backtest holds at the last close (P&L at mid, before exit costs).",
+  "open_positions": {
+    "book": {
+      "entry_date": "2026-11-12",
+      "expiry": "2026-12-11",
+      "legs": "P7160x-2;C7895x-1",
+      "premium": 9274.28,
+      "pnl_to_date_mid": 99.39,
+      "hedge_dollars_per_point": -14.82,
+      "hedge_es_contracts": -0.296,
+      "days_left": 28
+    },
+    "strangle": {
+      "entry_date": "2026-11-12",
+      "expiry": "2026-12-11",
+      "legs": "P7160x-1;C7895x-1",
+      "premium": 5740.72,
+      "pnl_to_date_mid": 39.53,
+      "hedge_dollars_per_point": 0.2,
+      "hedge_es_contracts": 0.004,
+      "days_left": 28
+    },
+    "condor": {
+      "entry_date": "2026-11-12",
+      "expiry": "2026-12-11",
+      "legs": "P7160x-1;C7895x-1;P6680x1;C8045x1",
+      "premium": 3900.08,
+      "pnl_to_date_mid": -46.43,
+      "hedge_dollars_per_point": 0.32,
+      "hedge_es_contracts": 0.006,
+      "days_left": 28
+    },
+    "longstr": {
+      "entry_date": "2026-11-12",
+      "expiry": "2026-12-11",
+      "legs": "P7160x1;C7895x1",
+      "premium": -5740.72,
+      "pnl_to_date_mid": -160.41,
+      "hedge_dollars_per_point": -0.2,
+      "hedge_es_contracts": -0.004,
+      "days_left": 28
+    },
+    "longput": {
+      "entry_date": "2026-11-12",
+      "expiry": "2026-12-11",
+      "legs": "P7160x1",
+      "premium": -3533.56,
+      "pnl_to_date_mid": -138.72,
+      "hedge_dollars_per_point": 15.02,
+      "hedge_es_contracts": 0.3,
+      "days_left": 28
+    },
+    "longcall": {
+      "entry_date": "2026-11-12",
+      "expiry": "2026-12-11",
+      "legs": "C7895x1",
+      "premium": -2207.17,
+      "pnl_to_date_mid": -26.95,
+      "hedge_dollars_per_point": -15.22,
+      "hedge_es_contracts": -0.304,
+      "days_left": 28
+    }
+  },
+  "new_entry_allowed_next_session": {
+    "book": false,
+    "strangle": false,
+    "condor": false,
+    "longstr": false,
+    "longput": false,
+    "longcall": false
+  },
+  "vrp_mean_vix_minus_realized": 3.889812872005707,
+  "vrp_share_positive": 0.8499542543458372,
+  "calibration": {
+    "n_obs": 6917,
+    "rmse_vol_pts": 1.3381630477214954,
+    "median_abs_err_vol_pts": 0.665709790317684,
+    "tenors": [
+      10,
+      20,
+      30
+    ]
+  }
+}

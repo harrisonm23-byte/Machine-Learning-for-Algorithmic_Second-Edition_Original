@@ -68,8 +68,8 @@ VIX below 30 at 10, 20 and 30 days (`calibration/fit_errors.csv`). The page's mo
 to +3.8 points on calls, and by −5.5 to −17 points on short-dated 5-delta puts in stress
 (`calibration/fit_errors_page_model.csv`).
 
-**Check on real SPX options.** At the backtest's own entries since Feb 2024 (33 option legs with
-SPXW trades), the calibrated surface is on average 0.3 (puts) to 0.8 (calls) vol points richer than
+**Check on real SPX options.** At the backtest's own entries since Feb 2024 (33 distinct option
+legs that traded on SPXW that day; none of the condor's 5-delta wings did), the calibrated surface is on average 0.3 (puts) to 0.8 (calls) vol points richer than
 the traded prices, and the page's model is 1.5 points richer on calls (`results/spxw_check.csv`).
 So the calibrated results below probably still slightly flatter the short-vol versions. The
 "calibrated −0.5" rows show the effect of correcting for that.
@@ -79,17 +79,18 @@ So the calibrated results below probably still slightly flatter the short-vol ve
 Primary setup, fixed before any results were seen: hedged daily, VIX 12–18 entry filter, held to
 expiry. Calibrated surface, after costs, Jan 2010 – Nov 2026.
 
-| Version | Sharpe | Return / yr on notional | Max drawdown on notional | Beta to SPX | Win rate | Sharpe, surface −0.5 vol |
-|---|---|---|---|---|---|---|
-| Short (put + strangle) | 0.69 | 1.83% | −8.7% | see grid | 78–83% | 0.35 |
-| Short strangle | 0.85 | 1.30% | −4.8% | | | 0.47 |
-| Iron condor | 0.43 | 0.46% | −2.8% | | | 0.05 |
-| Long strangle | −1.08 | −1.63% | −30.2% | | | −0.69 |
-| Long put | −0.58 | −0.70% | −13.8% | | | −0.33 |
-| Long call | −1.35 | −0.95% | −16.9% | | | −0.94 |
+| Version | Sharpe | Return / yr on notional | Max drawdown on notional | Win rate | Worst trade (× premium) | Beta / corr. to SPX | Sharpe, surface −0.5 vol |
+|---|---|---|---|---|---|---|---|
+| Short (put + strangle) | 0.69 | 1.83% | −8.7% | 84% | −5.8 | 0.06 / 0.25 | 0.35 |
+| Short strangle | 0.85 | 1.30% | −4.8% | 79% | −4.9 | 0.04 / 0.26 | 0.47 |
+| Iron condor | 0.43 | 0.46% | −2.8% | 70% | −4.2 | 0.03 / 0.30 | 0.05 |
+| Long strangle | −1.08 | −1.63% | −30.2% | 17% | −1.5 | −0.04 / −0.26 | −0.69 |
+| Long put | −0.58 | −0.70% | −13.8% | 15% | −1.9 | −0.02 / −0.21 | −0.33 |
+| Long call | −1.35 | −0.95% | −16.9% | 26% | −3.5 | −0.01 / −0.19 | −0.94 |
 
-(Exact figures, including beta, win rates and worst trades, are in `results/grid_calibrated.csv`
-and `results/sensitivity.csv`.)
+151 completed trades per version. A hedged long option can lose more than its premium when the
+hedge loses on a trending, low-volatility path. Full tables: `results/grid_calibrated.csv`,
+`results/grid_page.csv` and `results/sensitivity.csv`.
 
 ### What the results say
 
@@ -103,8 +104,9 @@ and `results/sensitivity.csv`.)
    the calibrated one, and the iron condor most of all (0.96 vs 0.43), because the page prices its
    protective wings too cheaply.
 3. **The edge has faded.** Calibrated Sharpe for 2010–2017 vs 2018–2026: book 1.64 → 0.24,
-   strangle 1.75 → 0.38, condor 1.09 → 0.06 (`results/subperiods.csv`). Since Feb 2018 there have been
-   more volatility sellers and sharper shocks.
+   strangle 1.75 → 0.38, condor 1.09 → 0.06 (`results/subperiods.csv`). With the −0.5 vol
+   correction from the SPX check, 2018–2026 is about break-even (book −0.02, strangle 0.07). Since
+   Feb 2018 there have been more volatility sellers and sharper shocks.
 4. **The losses come in bursts.** Stress windows cost the book 3.4–7.2% of notional each
    (Aug 2015, Feb 2018, Mar 2020, Apr 2025; `results/episodes.png`). That is one to two years of
    average gains. April 2025 was the worst: the options expired worthless, but the daily ES hedge
@@ -120,9 +122,10 @@ and `results/sensitivity.csv`.)
    entry price, the hedge and the settlement.
 7. **The VIX filter helps the short versions.** Without it, entries continue into high-VIX
    regimes, and the hedged book's Sharpe drops from 0.69 to 0.51.
-8. **"Hedged" is not market-neutral.** The hedged short books still have a correlation of about
-   0.4 with the S&P 500 (beta about 0.1). Short vega loses when the VIX jumps in a selloff, and a
-   Black-Scholes delta hedge does not offset that.
+8. **"Hedged" is not market-neutral.** The hedged short books keep a correlation of 0.25–0.30
+   with the S&P 500 (beta 0.03–0.06 on the calibrated surface, about 0.1 on the page's model).
+   Short vega loses when the VIX jumps in a selloff, and a Black-Scholes delta hedge does not
+   offset that.
 
 ### Status at the last data point (13 Nov 2026)
 

@@ -383,7 +383,8 @@ def check_against_spxw(trades: pd.DataFrame, index_data: pd.DataFrame, surfaces:
                 row[f"model_{name}"] = bs_price(s_avg, k, T, vol, call)
                 row[f"iv_err_{name}"] = (vol - row["iv_real"]) * 100
             rows.append(row)
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    return out.drop_duplicates(["date", "leg", "strike"]).reset_index(drop=True) if len(out) else out
 
 
 def summarize_calibration(cal: pd.DataFrame) -> dict:
