@@ -12,8 +12,8 @@ from .strategies import STRATEGIES
 
 log = logging.getLogger(__name__)
 
-# Primary configuration, fixed before looking at results: the strategy page's own setup.
-PRIMARY = dict(hedge=True, vix_filter=(12.0, 18.0), exit_rule="expiry", atm_ratio=0.9)
+# Primary rules, fixed before looking at results: the strategy page's own setup.
+PRIMARY = dict(hedge=True, vix_filter=(12.0, 18.0), exit_rule="expiry")
 
 EPISODES = {
     "Aug 2011 (US downgrade)": ("2011-07-22", "2011-08-31"),
@@ -27,25 +27,28 @@ EPISODES = {
 }
 
 
-def run_grid(data: pd.DataFrame, strategies=None, exit_rules=None, hedges=(True, False),
-             filters=((12.0, 18.0), None), atm_ratios=(0.9,), **overrides) -> tuple[pd.DataFrame, dict]:
-    """Run every combination; return a summary table and the results keyed by label."""
+def primary_config(strategy: str, surface: dict) -> BacktestConfig:
+    return BacktestConfig(strategy=strategy, **PRIMARY, **surface)
+
+
+def run_grid(data: pd.DataFrame, surface: dict, strategies=None, exit_rules=None,
+             hedges=(True, False), filters=((12.0, 18.0), None), **overrides) -> tuple[pd.DataFrame, dict]:
+    """Run every combination on one surface; return a summary table and results by label."""
     strategies = strategies or list(STRATEGIES)
     exit_rules = exit_rules or list(EXIT_RULES)
     rows, results = [], {}
-    for s, e, h, f, a in itertools.product(strategies, exit_rules, hedges, filters, atm_ratios):
-        cfg = BacktestConfig(strategy=s, exit_rule=e, hedge=h, vix_filter=f, atm_ratio=a, **overrides)
+    for s, e, h, f in itertools.product(strategies, exit_rules, hedges, filters):
+        cfg = BacktestConfig(strategy=s, exit_rule=e, hedge=h, vix_filter=f, **surface, **overrides)
         res = run_backtest(data, cfg)
         results[cfg.label] = res
         rows.append(res.summary)
         log.info("%s sharpe=%.2f", cfg.label, res.summary["sharpe"])
-    table = pd.DataFrame(rows).set_index("label")
-    return table, results
+    return pd.DataFrame(rows).set_index("label"), results
 
 
 def variance_risk_premium(data: pd.DataFrame, horizon: int = 21) -> pd.DataFrame:
     """VIX (implied, 30 calendar days) versus realised S&P 500 volatility over the
-    next ``horizon`` trading days, both in annualised vol points."""
+    next ``horizon`` trading days (t+1 .. t+horizon), both in annualised vol points."""
     logret = np.log(data["spx"]).diff()
     fwd_var = logret.pow(2).rolling(horizon).sum().shift(-horizon) * 252 / horizon
     out = pd.DataFrame({"vix": data["vix"], "realized_fwd": np.sqrt(fwd_var) * 100}).dropna()

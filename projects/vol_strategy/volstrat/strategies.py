@@ -24,8 +24,10 @@ class StrategySpec:
 
     @property
     def is_short_vol(self) -> bool:
-        """Net seller of options (collects premium)."""
-        return sum(leg.qty for leg in self.legs) < 0
+        """Sells the 15-delta (core) strikes. Bought 5-delta wings, as in the iron condor,
+        cap the tail but leave the position a net premium seller. The backtest decides the
+        side of each trade from the sign of the premium actually collected."""
+        return sum(leg.qty for leg in self.legs if abs(leg.strike_delta) >= 0.15) < 0
 
 
 P15, C15 = -0.15, 0.15

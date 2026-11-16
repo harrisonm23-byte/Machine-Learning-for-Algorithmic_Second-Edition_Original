@@ -202,8 +202,10 @@ def calibrate_day(client: AlpacaClient, day: pd.Timestamp, S: float, root: str =
 
 
 def run_calibration(index_data: pd.DataFrame, start: str = "2024-02-01", end: str | None = None,
-                    cache_dir: str | Path | None = "data_cache/alpaca", step: int = 1) -> pd.DataFrame:
-    """Calibrate every ``step``-th trading day between ``start`` and ``end``."""
+                    cache_dir: str | Path | None = "data_cache/alpaca", step: int = 1,
+                    target_days: int = 30) -> pd.DataFrame:
+    """Calibrate every ``step``-th trading day between ``start`` and ``end``, using the
+    expiry closest to ``target_days`` calendar days out."""
     client = AlpacaClient(cache_dir=cache_dir)
     end = end or index_data.index[-1].strftime("%Y-%m-%d")
     spy = client.stock_bars("SPY", start, end)
@@ -212,7 +214,8 @@ def run_calibration(index_data: pd.DataFrame, start: str = "2024-02-01", end: st
     for i, day in enumerate(days[::step]):
         if day not in spy.index:
             continue
-        r = calibrate_day(client, day, float(spy.loc[day, "vwap"]), calendar=index_data.index)
+        r = calibrate_day(client, day, float(spy.loc[day, "vwap"]), target_days=target_days,
+                          calendar=index_data.index)
         if r is None:
             log.warning("no calibration for %s", day.date())
             continue
@@ -248,6 +251,75 @@ def fit_surface_params(cal: pd.DataFrame) -> dict:
     sb, ib, rb2 = ols(cal["skew_b"].to_numpy())
     return {"atm_ratio": ar, "atm_intercept": ai, "skew_a": ia, "skew_a_vix": sa,
             "skew_b": ib, "skew_b_vix": sb, "_r2": {"atm": ar2, "skew_a": ra2, "skew_b": rb2}}
+
+
+POINTS = ["p15", "c15", "p05", "c05"]
+WING_Z = (-5.0, 2.0)     # flat smile beyond these z-scores, roughly the strike range fitted on
+SURFACE_KEYS = ["atm_ratio", "atm_intercept", "skew_a", "skew_a_vix", "skew_b", "skew_b_vix",
+                "term_atm", "term_atm_vix", "term_a", "term_b"]
+
+
+def _observations(cals: dict[int, pd.DataFrame], vix_col: str = "vix_close") -> pd.DataFrame:
+    """One row per (day, tenor, strike) with the real IV at the ATM, 15- and 5-delta points."""
+    rows = []
+    for tenor, cal in cals.items():
+        for day, r in cal.iterrows():
+            T = r["days"] / 365.0
+            rows.append((day, tenor, r[vix_col], r["spot"], r["forward"], T, r["atm_iv"], "atm"))
+            for p in POINTS:
+                if pd.notna(r.get(f"k_{p}")) and pd.notna(r.get(f"iv_{p}")):
+                    rows.append((day, tenor, r[vix_col], r["spot"], r[f"k_{p}"], T, r[f"iv_{p}"], p))
+    return pd.DataFrame(rows, columns=["date", "tenor", "vix", "spot", "strike", "T", "iv", "point"])
+
+
+def fit_surface_global(cals: dict[int, pd.DataFrame], vix_col: str = "vix_close",
+                       fit_term: bool | None = None) -> dict:
+    """Least-squares fit of the backtest's own surface formula (bs.Surface.from_vix,
+    with flat wings) to real implied vols at the strikes the strategies trade.
+
+    ``cals`` maps tenor (days) to a calibration table from ``run_calibration``.
+    Term-structure parameters are fitted only when more than one tenor is given.
+    The model is evaluated with m = ln(K / spot), the convention the backtest uses.
+    """
+    from scipy.optimize import least_squares
+
+    from .bs import Surface
+
+    obs = _observations(cals, vix_col).dropna()
+    fit_term = len(cals) > 1 if fit_term is None else fit_term
+    keys = SURFACE_KEYS if fit_term else SURFACE_KEYS[:6]
+    x0 = np.array([0.85, 0.0, 0.6, 0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 0.0][:len(keys)])
+    V, Sp, K, T, iv = (obs[c].to_numpy(float) for c in ["vix", "spot", "strike", "T", "iv"])
+
+    def resid(x):
+        p = dict(zip(keys, x))
+        out = np.empty(len(obs))
+        for i in range(len(obs)):
+            out[i] = Surface.from_vix(V[i], wing_z=WING_Z, **p).vol(Sp[i], K[i], T[i]) - iv[i]
+        return out * 100     # vol points
+
+    sol = least_squares(resid, x0, loss="soft_l1", f_scale=1.0)
+    params = dict(zip(keys, map(float, sol.x)))
+    for k in SURFACE_KEYS:
+        params.setdefault(k, 0.0)
+    r = resid(sol.x)
+    params["wing_z"] = WING_Z
+    params["_fit"] = {"n_obs": int(len(obs)), "rmse_vol_pts": float(np.sqrt(np.mean(r ** 2))),
+                      "median_abs_err_vol_pts": float(np.median(np.abs(r))), "tenors": sorted(cals)}
+    return params
+
+
+def surface_errors(cals: dict[int, pd.DataFrame], params: dict, vix_col: str = "vix_close") -> pd.DataFrame:
+    """Median model-minus-real IV (vol points) by tenor, VIX bucket and strike point."""
+    from .bs import Surface
+
+    obs = _observations(cals, vix_col).dropna()
+    p = {k: v for k, v in params.items() if not k.startswith("_")}
+    obs["error"] = [(Surface.from_vix(v, **p).vol(s, k, t) - y) * 100
+                    for v, s, k, t, y in obs[["vix", "spot", "strike", "T", "iv"]].itertuples(index=False)]
+    obs["bucket"] = pd.cut(obs["vix"], [0, 12, 15, 18, 22, 30, 200], right=False).astype(str)
+    return obs.pivot_table(index=["tenor", "bucket"], columns="point", values="error",
+                           aggfunc="median", observed=True)
 
 
 def validate_surface(cal: pd.DataFrame, params: dict) -> pd.DataFrame:
