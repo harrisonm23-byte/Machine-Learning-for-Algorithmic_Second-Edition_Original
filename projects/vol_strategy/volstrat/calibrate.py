@@ -339,6 +339,53 @@ def validate_surface(cal: pd.DataFrame, params: dict) -> pd.DataFrame:
     return err.pivot_table(index="bucket", columns="point", values="error", aggfunc="median", observed=True)
 
 
+def check_against_spxw(trades: pd.DataFrame, index_data: pd.DataFrame, surfaces: dict,
+                       cache_dir: str | Path | None = "data_cache/alpaca_spx", min_volume: int = 5) -> pd.DataFrame:
+    """Compare model prices with real SPX weekly-option (SPXW) trades at the exact strikes
+    and expiries the backtest traded on its entry days (Feb 2024 onwards).
+
+    The real price is the day's VWAP, so the model is evaluated at day-average conditions:
+    SPX scaled by SPY's VWAP/close ratio and the VIX's average of open/high/low/close.
+    ``surfaces`` maps a name to a ``BacktestConfig`` whose ``surface(vix)`` is used.
+    Returns one row per traded leg with real and model prices and implied-vol errors.
+    """
+    from .bs import price as bs_price
+
+    client = AlpacaClient(cache_dir=cache_dir)
+    t = trades[trades["entry_date"] >= "2024-02-01"].drop_duplicates(["entry_date", "strikes"])
+    if t.empty:
+        return pd.DataFrame()
+    spy = client.stock_bars("SPY", t["entry_date"].min().strftime("%Y-%m-%d"),
+                            t["entry_date"].max().strftime("%Y-%m-%d"))
+    rows = []
+    for _, r in t.iterrows():
+        day = r["entry_date"]
+        if day not in spy.index:
+            continue
+        legs = [(s[0] == "C", float(s[1:].split("x")[0]), int(s.split("x")[1])) for s in r["strikes"].split(";")]
+        syms = [occ_symbol("SPXW", r["expiry"], c, k) for c, k, _ in legs]
+        bars = client.option_day(syms, day)
+        v = index_data.loc[day]
+        s_avg = v["spx"] * spy.loc[day, "vwap"] / spy.loc[day, "close"]
+        vix_avg = (v["vix_open"] + v["vix_high"] + v["vix_low"] + v["vix"]) / 4
+        T = (r["expiry"] - day).days / 365.0
+        F = s_avg * math.exp((0.045 - 0.013) * T)
+        for (call, k, q), sym in zip(legs, syms):
+            b = bars.get(sym)
+            if not b or b.get("v", 0) < min_volume:
+                continue
+            row = dict(date=day, leg=("C" if call else "P") + ("_wing" if q > 0 and len(legs) == 4 else ""),
+                       strike=k, spx_avg=s_avg, vix_avg=vix_avg, days=(r["expiry"] - day).days,
+                       real_vwap=float(b["vw"]), volume=int(b["v"]),
+                       iv_real=implied_vol(float(b["vw"]), F, k, T, call))
+            for name, cfg in surfaces.items():
+                vol = cfg.surface(vix_avg).vol(s_avg, k, T)
+                row[f"model_{name}"] = bs_price(s_avg, k, T, vol, call)
+                row[f"iv_err_{name}"] = (vol - row["iv_real"]) * 100
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def summarize_calibration(cal: pd.DataFrame) -> dict:
     """Robust (median) parameters plus how they vary with the VIX level."""
     out = {

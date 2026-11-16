@@ -82,7 +82,7 @@ def main(argv=None):
     grid_page[COLS].to_csv(out / "grid_page.csv")
 
     sens_rows = []
-    for surf in [calibrated(atm_shift=-1.0), calibrated(atm_shift=+1.0),
+    for surf in [calibrated(atm_shift=-1.0), calibrated(atm_shift=-0.5), calibrated(atm_shift=+1.0),
                  *[dict(PAGE, atm_ratio=r) for r in (0.8, 0.85, 1.0)]]:
         for s in STRATEGIES:
             sens_rows.append(run_backtest(data, primary_config(s, surf)).summary)
@@ -98,6 +98,30 @@ def main(argv=None):
     yearly_returns(results, labels).rename(columns=lambda l: l.split("|")[0]).to_csv(out / "yearly.csv")
     for s, lab in zip(STRATEGIES, labels):
         results[lab].trades.to_csv(out / f"trades_{s}.csv", index=False)
+
+    sub_rows = []
+    for name, surf in [("calibrated", cal), ("calibrated-0.5", calibrated(atm_shift=-0.5))]:
+        for s in STRATEGIES:
+            r = run_backtest(data, primary_config(s, surf)).daily["ret"] if name != "calibrated" \
+                else results[primary_config(s, cal).label].daily["ret"]
+            for a_, b_ in [("2010", "2017"), ("2018", str(data.index[-1].year)), ("2010", str(data.index[-1].year))]:
+                x = r.loc[a_:b_]
+                sub_rows.append(dict(surface=name, strategy=s, period=f"{a_}-{b_}",
+                                     sharpe=x.mean() / x.std() * np.sqrt(252) if x.std() > 0 else np.nan,
+                                     ann_return_on_notional=x.mean() * 252))
+    pd.DataFrame(sub_rows).to_csv(out / "subperiods.csv", index=False)
+
+    try:   # real SPX option prices at the backtest's own trades (needs Alpaca access)
+        from .backtest import BacktestConfig
+        from .calibrate import check_against_spxw
+
+        trades_all = pd.concat([results[l].trades for l in labels[:3]])
+        chk = check_against_spxw(trades_all, data, {"calibrated": BacktestConfig(**cal),
+                                                    "page": BacktestConfig(**PAGE)},
+                                 cache_dir=f"{a.cache_dir}/alpaca_spx")
+        chk.to_csv(out / "spxw_check.csv", index=False)
+    except Exception as exc:  # noqa: BLE001 - optional check
+        logging.warning("SPXW price check skipped: %s", exc)
 
     vrp = variance_risk_premium(data)
     vrp_by_bucket(vrp).to_csv(out / "vrp_buckets.csv")

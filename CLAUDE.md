@@ -14,8 +14,14 @@
   5-delta wings), long strangle, long put, long call. Its historical odds start from days when the
   VIX is between 12 and 18. The page explains the Greeks (delta, gamma, vega, volga, vanna, gaps).
   It does not define exit rules, re-hedge frequency or position sizing.
-- Data check: FMP serves daily `^VIX` and `^GSPC` from 2010 on this plan. `^VIX3M` and `^VIX9D`
-  are not available. FMP has no historical option chains.
+- Data check: FMP serves daily `^VIX` and `^GSPC` from 2010 on this plan. `^VIX3M`, `^VIX9D`,
+  `^SKEW` and the Cboe strategy indices (`^PUT`, `^BXM`, ...) are premium-gated. FMP has no
+  historical option chains. **Alpaca** (keys saved as a network secret for data.alpaca.markets in
+  this cloud environment) serves historical option bars for SPY and SPXW from Feb 2024.
+- `projects/vol_strategy/` backtests all six versions of that strategy (see its README). The
+  volatility surface is calibrated to real SPY option prices (`calibration/`). Results: the short-vol
+  versions have a small positive edge (calibrated Sharpe about 0.4-0.85) that is worth about one
+  vol point of premium and has faded since 2018; the long-vol versions lose steadily.
 - They trade on Robinhood (charts) and have FMP and Alpaca API access.
 - Work so far: `projects/ml_long_short/` reproduces the book's chapter 4/8/12 LightGBM long-short
   workflow. On FMP data (30 large caps, 2018-2026) it showed no edge after costs. See its README.
