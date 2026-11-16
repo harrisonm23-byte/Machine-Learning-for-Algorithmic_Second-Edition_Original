@@ -77,6 +77,18 @@ class Surface:
     def __init__(self, atm: float, a: float = 0.6, b: float = 1.0):
         self.atm, self.a, self.b = atm, a, b
 
+    @classmethod
+    def from_vix(cls, vix: float, atm_ratio: float = 0.9, atm_intercept: float = 0.0,
+                 skew_a: float = 0.6, skew_a_vix: float = 0.0,
+                 skew_b: float = 1.0, skew_b_vix: float = 0.0) -> "Surface":
+        """Surface for a VIX level (in points). With the ``*_vix`` slopes at zero this is
+        the strategy page's model; the calibrated preset makes level and skew depend on the VIX.
+        Skew slope is clipped to [0, 2.5] and curvature to [0, 6] to stay inside the fitted range."""
+        atm = max(MIN_VOL, (atm_ratio * vix + atm_intercept) / 100.0)
+        a = min(2.5, max(0.0, skew_a + skew_a_vix * vix))
+        b = min(6.0, max(0.0, skew_b + skew_b_vix * vix))
+        return cls(atm, a, b)
+
     def vol(self, S: float, K: float) -> float:
         m = math.log(K / S)
         return min(MAX_VOL, max(MIN_VOL, self.atm - self.a * m + self.b * m * m))

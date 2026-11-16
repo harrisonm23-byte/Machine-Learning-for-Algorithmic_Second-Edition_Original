@@ -227,6 +227,46 @@ def run_calibration(index_data: pd.DataFrame, start: str = "2024-02-01", end: st
     return cal
 
 
+def fit_surface_params(cal: pd.DataFrame) -> dict:
+    """Linear-in-VIX surface parameters fitted across calibration days:
+
+    atm (vol points) = atm_ratio * VIX + atm_intercept
+    a = skew_a + skew_a_vix * VIX,   b = skew_b + skew_b_vix * VIX
+
+    The keys match ``BacktestConfig`` fields, so the result can be passed straight in.
+    """
+    vix = cal["vix_avg"].to_numpy()
+
+    def ols(y):
+        slope, intercept = np.polyfit(vix, y, 1)
+        resid = y - (slope * vix + intercept)
+        r2 = 1 - resid.var() / y.var()
+        return float(slope), float(intercept), float(r2)
+
+    ar, ai, ar2 = ols(cal["atm_iv"].to_numpy() * 100)
+    sa, ia, ra2 = ols(cal["skew_a"].to_numpy())
+    sb, ib, rb2 = ols(cal["skew_b"].to_numpy())
+    return {"atm_ratio": ar, "atm_intercept": ai, "skew_a": ia, "skew_a_vix": sa,
+            "skew_b": ib, "skew_b_vix": sb, "_r2": {"atm": ar2, "skew_a": ra2, "skew_b": rb2}}
+
+
+def validate_surface(cal: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """Model IV minus real IV (vol points) at the real 15- and 5-delta strikes, by VIX bucket."""
+    from .bs import Surface
+
+    rows = []
+    for day, r in cal.iterrows():
+        surf = Surface.from_vix(r["vix_avg"], **{k: v for k, v in params.items() if not k.startswith("_")})
+        for name in ["p15", "c15", "p05", "c05"]:
+            k, iv = r.get(f"k_{name}"), r.get(f"iv_{name}")
+            if pd.notna(k) and pd.notna(iv):
+                rows.append(dict(date=day, vix=r["vix_avg"], point=name,
+                                 error=(surf.vol(r["forward"], k) - iv) * 100))
+    err = pd.DataFrame(rows)
+    err["bucket"] = pd.cut(err["vix"], [0, 12, 15, 18, 22, 30, 200], right=False).astype(str)
+    return err.pivot_table(index="bucket", columns="point", values="error", aggfunc="median", observed=True)
+
+
 def summarize_calibration(cal: pd.DataFrame) -> dict:
     """Robust (median) parameters plus how they vary with the VIX level."""
     out = {
